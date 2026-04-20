@@ -9,10 +9,17 @@ import report_pb2
 broker = 'localhost:9092'
 topic_name = 'stock_prices'
 project = os.environ.get("PROJECT", "p7")
-db_url = f"mysql+pymysql://root:abc@{project}-mysql-1/CS544"
+db_url = f"mysql+mysqlconnector://root:abc@{project}-mysql-1/CS544"
 
 def init_topic():
-    admin = KafkaAdminClient(bootstrap_servers=broker)
+    while True:
+        try:
+            admin = KafkaAdminClient(bootstrap_servers=broker)
+            break
+        except Exception as e:
+            print(f"Waiting for Kafka: {e}")
+            time.sleep(2)
+
     try:
         admin.delete_topics([topic_name])
         print("Deleted existing topic, sleeping 3s...")
@@ -23,10 +30,22 @@ def init_topic():
     print("Topic created.")
     admin.close()
 
+def get_engine():
+    while True:
+        try:
+            engine = sqlalchemy.create_engine(db_url)
+            with engine.connect() as conn:
+                conn.execute(sqlalchemy.text("SELECT 1"))
+            print("DB connected.")
+            return engine
+        except Exception as e:
+            print(f"Waiting for DB: {e}")
+            time.sleep(2)
+
 def main():
     init_topic()
+    engine = get_engine()
 
-    engine = sqlalchemy.create_engine(db_url)
     producer = KafkaProducer(
         bootstrap_servers=broker,
         retries=10,
@@ -35,28 +54,33 @@ def main():
 
     last_id = 0
     while True:
-        with engine.connect() as conn:
-            rows = conn.execute(
-                sqlalchemy.text("SELECT id, ticker, date, price FROM stock_prices WHERE id > :last_id ORDER BY id"),
-                {"last_id": last_id}
-            ).fetchall()
+        try:
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    sqlalchemy.text("SELECT id, ticker, date, price FROM stock_prices WHERE id > :last_id ORDER BY id"),
+                    {"last_id": last_id}
+                ).fetchall()
 
-        for row in rows:
-            id_, ticker, date, price = row
-            report = report_pb2.Report(
-                date=str(date),
-                price=float(price),
-                ticker=ticker
-            )
-            producer.send(
-                topic_name,
-                key=ticker.encode('utf-8'),
-                value=report.SerializeToString()
-            )
-            last_id = id_
+            for row in rows:
+                id_, ticker, date, price = row
+                report = report_pb2.Report(
+                    date=str(date),
+                    price=float(price),
+                    ticker=ticker
+                )
+                producer.send(
+                    topic_name,
+                    key=ticker.encode('utf-8'),
+                    value=report.SerializeToString()
+                )
+                last_id = id_
 
-        if not rows:
-            time.sleep(0.5)
+            if not rows:
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"DB error: {e}")
+            time.sleep(2)
+            engine = get_engine()
 
 if __name__ == '__main__':
     main()

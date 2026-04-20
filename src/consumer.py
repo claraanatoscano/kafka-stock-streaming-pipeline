@@ -18,7 +18,6 @@ def ensure_hdfs_dir():
     run(["hdfs", "dfs", "-mkdir", "-p", f"{hdfs_base}{hdfs_data_dir}"])
 
 def write_to_hdfs(local_path, hdfs_path):
-    # Remove existing file if it exists, then copy local file to HDFS
     run(["hdfs", "dfs", "-rm", "-f", hdfs_path])
     run(["hdfs", "dfs", "-put", local_path, hdfs_path])
 
@@ -42,12 +41,18 @@ def main():
         sys.exit(1)
     partition_id = int(sys.argv[1])
 
-    consumer = KafkaConsumer(
-        bootstrap_servers=broker,
-        group_id=None,
-        enable_auto_commit=False,
-        max_poll_records=5000
-    )
+    while True:
+        try:
+            consumer = KafkaConsumer(
+                bootstrap_servers=broker,
+                group_id=None,
+                enable_auto_commit=False,
+                max_poll_records=5000
+            )
+            break
+        except Exception as e:
+            print(f"Waiting for Kafka: {e}")
+            import time; time.sleep(2)
 
     tp = TopicPartition(topic_name, partition_id)
     consumer.assign([tp])
@@ -79,7 +84,6 @@ def main():
         df = pd.DataFrame(rows, columns=['date', 'price', 'ticker'])
         table = pa.Table.from_pandas(df, preserve_index=False)
 
-        # Write to local temp file first, then copy to HDFS
         hdfs_path = f'{hdfs_base}{hdfs_data_dir}/partition-{partition_id}-batch-{batch_id}.parquet'
         with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as tmp:
             tmp_path = tmp.name
