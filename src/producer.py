@@ -42,9 +42,26 @@ def get_engine():
             print(f"Waiting for DB: {e}")
             time.sleep(2)
 
+def wait_for_data(engine):
+    while True:
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(sqlalchemy.text("SELECT COUNT(*) FROM stock_prices"))
+                count = result.fetchone()[0]
+                if count > 0:
+                    print(f"DB has {count} rows, starting producer...")
+                    return
+                else:
+                    print("Waiting for data in stock_prices...")
+                    time.sleep(1)
+        except Exception as e:
+            print(f"Error checking data: {e}")
+            time.sleep(2)
+
 def main():
     init_topic()
     engine = get_engine()
+    wait_for_data(engine)
 
     producer = KafkaProducer(
         bootstrap_servers=broker,
