@@ -3,11 +3,11 @@ import time
 import sqlalchemy
 from kafka import KafkaProducer
 from kafka.admin import KafkaAdminClient, NewTopic
-from kafka.errors import UnknownTopicOrPartitionError
+from kafka.errors import UnknownTopicOrPartitionError, TopicAlreadyExistsError
 import report_pb2
 
-broker = 'localhost:9092'
-topic_name = 'stock_prices'
+broker = "localhost:9092"
+topic_name = "stock_prices"
 project = os.environ.get("PROJECT", "p7")
 db_url = f"mysql+mysqlconnector://root:abc@{project}-mysql-1/CS544"
 
@@ -26,8 +26,18 @@ def init_topic():
         time.sleep(3)
     except UnknownTopicOrPartitionError:
         pass
-    admin.create_topics([NewTopic(name=topic_name, num_partitions=4, replication_factor=1)])
-    print("Topic created.")
+
+    while True:
+        try:
+            admin.create_topics([NewTopic(name=topic_name, num_partitions=4, replication_factor=1)])
+            print("Topic created.")
+            break
+        except TopicAlreadyExistsError:
+            print("Topic already exists, continuing.")
+            break
+        except Exception as e:
+            print(f"Waiting to create topic: {e}")
+            time.sleep(1)
     admin.close()
 
 def get_engine():
@@ -66,7 +76,7 @@ def main():
     producer = KafkaProducer(
         bootstrap_servers=broker,
         retries=10,
-        acks='all'
+        acks="all"
     )
 
     last_id = 0
@@ -87,7 +97,7 @@ def main():
                 )
                 producer.send(
                     topic_name,
-                    key=ticker.encode('utf-8'),
+                    key=ticker.encode("utf-8"),
                     value=report.SerializeToString()
                 )
                 last_id = id_
@@ -99,5 +109,5 @@ def main():
             time.sleep(2)
             engine = get_engine()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
