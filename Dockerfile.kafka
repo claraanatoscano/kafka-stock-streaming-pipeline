@@ -1,0 +1,20 @@
+FROM p7-hdfs
+
+RUN apt-get update && \
+    apt-get install -y wget curl openjdk-17-jdk python3 python3-pip iputils-ping
+
+COPY src/requirements.txt /requirements.txt
+RUN pip3 install -r /requirements.txt --break-system-packages
+
+# Kafka (see https://kafka.apache.org/quickstart, KRaft config)
+RUN wget https://downloads.apache.org/kafka/4.2.0/kafka_2.13-4.2.0.tgz && \
+    tar -xf kafka_2.13-4.2.0.tgz && \
+    rm kafka_2.13-4.2.0.tgz
+
+# from bin/kafka-storage.sh random-uuid
+ENV KAFKA_CLUSTER_ID=dCHffFWYTCKWXiesmJMN9w
+
+ENTRYPOINT [ "/bin/sh", "-c" ]
+CMD ["cd /kafka_2.13-4.2.0 && \
+    bin/kafka-storage.sh format --standalone -t $KAFKA_CLUSTER_ID -c config/server.properties && \
+    bin/kafka-server-start.sh config/server.properties --override auto.create.topics.enable=false"]
